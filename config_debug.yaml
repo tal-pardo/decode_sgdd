@@ -1,0 +1,92 @@
+# Debug Configuration for SEDD Transformer Training
+# Small dataset (5000 samples) to verify gradient flow and loss decrease
+
+# ============================================================================
+# DATASET PARAMETERS
+# ============================================================================
+dataset:
+  path: "ldpc_codewords_r05.pt"  # Path to LDPC dataset
+  num_samples: null               # If null, use all samples from dataset file
+  seq_len: 128                    # Sequence length (must match dataset)
+  vocab_size: 2                   # Binary vocabulary
+  val_split: 0.1                  # Validation split ratio
+  seed: 42                        # Random seed for reproducibility
+
+# ============================================================================
+# MODEL ARCHITECTURE
+# ============================================================================
+model:
+  type: "transformer"             # "transformer" or "mlp"
+  
+  # Transformer-specific
+  hidden_dim: 256                 # Hidden dimension
+  n_heads: 8                      # Number of attention heads
+  n_blocks: 6                     # Number of transformer blocks
+  mlp_ratio: 4.0                  # MLP expansion ratio (256 -> 1024 -> 256)
+  dropout: 0.1                    # Dropout rate
+  scale_by_sigma: true            # Apply sigma-based scaling (SEDD post-processing)
+  
+  # MLP-specific (for comparison)
+  embedding_dim: 64               # Embedding dimension (MLP only)
+  num_layers: 4                   # Number of hidden layers (MLP only)
+
+# ============================================================================
+# NOISE SCHEDULE
+# ============================================================================
+noise_schedule:
+  type: "cosine"                  # "cosine", "linear", or "exponential"
+  sigma_min: 0.001                # Minimum noise level
+  sigma_max: 1.0                  # Maximum noise level
+
+# ============================================================================
+# TRAINING PARAMETERS
+# ============================================================================
+training:
+  num_epochs: 10                  # Number of training epochs (debug: small)
+  batch_size: 32                  # Batch size
+  learning_rate: 1.0e-3           # Learning rate
+  optimizer: "adam"               # "adam" or "sgd"
+  weight_decay: 1.0e-5            # Weight decay (L2 regularization)
+  
+  # Gradient clipping
+  clip_grad_norm: 1.0             # Max gradient norm (set to 0 to disable)
+  
+  # Learning rate scheduling
+  lr_scheduler:
+    type: "cosine"                # "cosine", "linear", "exponential", or "none"
+    warmup_epochs: 1              # Warmup epochs (for cosine scheduler)
+    min_lr: 1.0e-5                # Minimum learning rate (for cosine scheduler)
+
+# ============================================================================
+# CHECKPOINTING & LOGGING
+# ============================================================================
+checkpointing:
+  save_dir: "./checkpoints_debug_transformer"  # Directory to save checkpoints
+  save_freq: 1                    # Save checkpoint every N epochs
+  save_best: true                 # Save best model based on validation loss
+  keep_strategy: "best_and_last"  # 'all', 'best_and_last', 'keep_last_n'
+  keep_last_n: 3                  # For 'keep_last_n' strategy only
+
+logging:
+  log_freq: 10                    # Log metrics every N batches
+  print_model_summary: true       # Print model summary at start
+  log_attention: false            # Log attention patterns (debug feature)
+  validation_freq: 2              # Generate and validate samples every N epochs
+  num_samples_to_generate: 100    # Number of samples to generate for validation
+
+# ============================================================================
+# DEVICE & PRECISION
+# ============================================================================
+device:
+  device: "cuda"                  # "cuda" or "cpu"
+  mixed_precision: false          # Use mixed precision (fp16)
+  
+# ============================================================================
+# DEBUG FLAGS
+# ============================================================================
+debug:
+  enabled: true
+  check_nan: true                 # Check for NaN in gradients/loss
+  log_gradients: false            # Log gradient statistics
+  visualize_attention: false      # Visualize attention patterns
+  test_forward_pass: true         # Run forward pass test before training

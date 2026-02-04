@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+de_SGDD/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Training outputs and checkpoints
+checkpoints*/
+outputs/
+logs/
+*.pt
+*.pth
+*.ckpt
+checkpoint_*.pt
+model_final.pt
+training_summary.json
+
+# Datasets
+data/
+datasets/
+*.data
+ldpc_codewords*.pt
+
+# Temporary/log files
+extracting txt files/
+training txt files/
+*.log
+*.csv
+*.txt
+*.md
+wandb/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large archives
+*.tar
+*.tar.gz
+*.zip
+*.rar
+
+# Cache
+.cache/
+*.cache
+
+# Temporary files
+tmp/
+temp/
+*.tmp

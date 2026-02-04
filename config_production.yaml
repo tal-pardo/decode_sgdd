@@ -1,0 +1,68 @@
+# Production Configuration for SEDD Transformer Training
+# Larger dataset and optimized hyperparameters
+
+dataset:
+  path: "ldpc_codewords_r05_large.pt"  # Will generate this file
+  num_samples: null                     # Use all samples
+  seq_len: 128
+  vocab_size: 2
+  val_split: 0.15
+  seed: 42
+
+model:
+  type: "transformer"
+  
+  # Transformer-specific
+  hidden_dim: 512                 # Larger hidden dimension
+  n_heads: 16                     # More attention heads
+  n_blocks: 12                    # Deeper network
+  mlp_ratio: 4.0
+  dropout: 0.1
+  scale_by_sigma: true
+  
+  # MLP-specific (for comparison)
+  embedding_dim: 128
+  num_layers: 6
+
+noise_schedule:
+  type: "cosine"
+  sigma_min: 0.001
+  sigma_max: 1.0
+
+training:
+  num_epochs: 50                  # Full training
+  batch_size: 64                  # Larger batches
+  learning_rate: 5.0e-4           # Slightly lower LR
+  optimizer: "adam"
+  weight_decay: 1.0e-5
+  clip_grad_norm: 1.0
+  
+  lr_scheduler:
+    type: "cosine"
+    warmup_epochs: 5
+    min_lr: 1.0e-6
+
+checkpointing:
+  save_dir: "./checkpoints_production_transformer"
+  save_freq: 2
+  save_best: true
+  keep_strategy: "keep_last_n"    # Keep only last 5 checkpoints
+  keep_last_n: 5
+
+logging:
+  log_freq: 50
+  print_model_summary: true
+  log_attention: false
+  validation_freq: 5              # Validate every 5 epochs in production
+  num_samples_to_generate: 500    # Generate more samples for production
+
+device:
+  device: "cuda"
+  mixed_precision: false
+
+debug:
+  enabled: false
+  check_nan: true
+  log_gradients: false
+  visualize_attention: false
+  test_forward_pass: true
