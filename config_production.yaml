@@ -55,6 +55,8 @@ logging:
   log_attention: false
   validation_freq: 5              # Validate every 5 epochs in production
   num_samples_to_generate: 500    # Generate more samples for production
+  check_overfitting: true         # Check overfitting (uses sampling for speed)
+  overfitting_sample_size: 5000   # Only check against 5k training samples (for speed)
 
 device:
   device: "cuda"

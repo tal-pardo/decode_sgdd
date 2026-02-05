@@ -73,6 +73,10 @@ logging:
   log_attention: false            # Log attention patterns (debug feature)
   validation_freq: 2              # Generate and validate samples every N epochs
   num_samples_to_generate: 100    # Number of samples to generate for validation
+  check_overfitting: true         # Enable overfitting check
+  overfitting_sample_size: 5000   # Check against all training data in debug
+  check_overfitting: true         # Check if generated samples are in training set
+  overfitting_sample_size: 5000   # Sample size from training data for check
 
 # ============================================================================
 # DEVICE & PRECISION

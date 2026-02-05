@@ -74,6 +74,10 @@ class LoggingConfig:
     log_attention: bool
     validation_freq: int  # Generate samples every N epochs
     num_samples_to_generate: int  # Number of samples to generate during validation
+    check_overfitting: bool  # Enable overfitting check
+    overfitting_sample_size: int  # Sample size for overfitting check
+    check_overfitting: bool  # Check if generated samples are in training set
+    overfitting_sample_size: int  # Sample size from training data for overfitting check
 
 
 @dataclass

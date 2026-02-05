@@ -34,7 +34,9 @@ class Trainer:
                  keep_strategy='all',
                  keep_last_n=3,
                  validation_freq=2,
-                 num_samples_to_generate=100):
+                 num_samples_to_generate=100,
+                 check_overfitting=True,
+                 overfitting_sample_size=5000):
         """
         Args:
             model: Score model to train
@@ -52,6 +54,8 @@ class Trainer:
             keep_last_n: When using 'keep_last_n' strategy, how many to keep
             validation_freq: Run sample validation every N epochs
             num_samples_to_generate: Number of samples to generate during validation
+            check_overfitting: Enable/disable overfitting check
+            overfitting_sample_size: Sample size from training data for overfitting check
         """
         self.model = model.to(device)
         self.graph = graph
@@ -70,6 +74,11 @@ class Trainer:
         self.keep_last_n = keep_last_n
         self.validation_freq = validation_freq
         self.num_samples_to_generate = num_samples_to_generate
+        self.check_overfitting = check_overfitting
+        self.overfitting_sample_size = overfitting_sample_size
+        
+        # Try to load LDPC parity-check matrix from dataset
+        self.H_matrix = self._extract_h_matrix()
         
         # TensorBoard writer
         self.writer = SummaryWriter(log_dir=str(self.save_dir / 'tensorboard'))
@@ -237,6 +246,68 @@ class Trainer:
         
         return x_t
     
+    def _extract_h_matrix(self):
+        """
+        Extract LDPC parity-check matrix (H) from dataset if available.
+        
+        Returns:
+            H matrix as numpy array, or None if not available
+        """
+        try:
+            dataset = self.train_loader.dataset
+            # Try to find stored H matrix in dataset
+            if hasattr(dataset, 'H_matrix'):
+                return dataset.H_matrix
+            elif hasattr(dataset, 'generator') and hasattr(dataset.generator, 'H'):
+                import numpy as np
+                return np.array(dataset.generator.H, dtype=np.int32)
+            else:
+                # Try to reconstruct from ldpc_dataset_clean.py
+                import pyldpc
+                import numpy as np
+                code_rate = 0.5
+                n = 128
+                k = int(n * code_rate)
+                m = n - k
+                column_weight = 2
+                row_weight = max(2, (n * column_weight) // m)
+                
+                result = pyldpc.make_ldpc(n, column_weight, row_weight, seed=42)
+                if isinstance(result, tuple):
+                    H = result[0]
+                else:
+                    H = result
+                
+                H = np.array(H, dtype=np.int32)
+                if H.shape[0] > m:
+                    H = H[:m, :]
+                
+                return H
+        except:
+            return None
+    
+    def _is_valid_codeword(self, x):
+        """
+        Check if a binary sequence is a valid LDPC codeword.
+        Valid iff H @ x = 0 (mod 2)
+        
+        Args:
+            x: Binary sequence of length 128 (numpy array or torch tensor)
+        
+        Returns:
+            True if valid codeword, False otherwise
+        """
+        if self.H_matrix is None:
+            return None
+        
+        # Convert to numpy if needed
+        if isinstance(x, torch.Tensor):
+            x = x.cpu().numpy()
+        
+        # Check syndrome: H @ x should be 0 (mod 2)
+        syndrome = (self.H_matrix @ x.astype(np.int32)) % 2
+        return syndrome.sum() == 0
+    
     def _count_parameters(self):
         """Count trainable parameters."""
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -338,9 +409,6 @@ class Trainer:
         
         generated_samples = torch.cat(generated_samples, dim=0)
         
-        # Check validity (if applicable - requires LDPC validation function)
-        # For now, we check uniqueness and Hamming distance
-        
         # 1. Uniqueness
         unique_samples = len(set([tuple(s.tolist()) for s in generated_samples]))
         uniqueness_pct = (unique_samples / len(generated_samples)) * 100
@@ -354,13 +422,31 @@ class Trainer:
         
         avg_hamming = np.mean(hamming_distances) if hamming_distances else 0
         
-        # 3. Check if samples are in training set (overfitting check)
-        if self.train_loader.dataset is not None:
+        # 3. LDPC Codeword Validity Check
+        valid_codewords = 0
+        if self.H_matrix is not None:
+            for sample in generated_samples:
+                if self._is_valid_codeword(sample):
+                    valid_codewords += 1
+            valid_pct = (valid_codewords / len(generated_samples)) * 100
+        else:
+            valid_pct = 0  # Unable to check if H matrix not available
+        
+        # 4. Check if samples are in training set (overfitting check)
+        if self.train_loader.dataset is not None and self.check_overfitting:
             try:
+                # Sample subset of training data for efficiency
                 training_data = set()
-                for batch in self.train_loader:
-                    for sample in batch:
-                        training_data.add(tuple(sample.tolist()))
+                dataset_size = len(self.train_loader.dataset)
+                sample_size = min(self.overfitting_sample_size, dataset_size)
+                
+                # Sample indices randomly
+                indices = torch.randperm(dataset_size)[:sample_size]
+                
+                # Collect sampled training data
+                for idx in indices:
+                    sample = self.train_loader.dataset[idx]
+                    training_data.add(tuple(sample.tolist()))
                 
                 in_training = sum(1 for s in generated_samples if tuple(s.tolist()) in training_data)
                 in_training_pct = (in_training / len(generated_samples)) * 100
@@ -372,11 +458,15 @@ class Trainer:
         # Log metrics
         self.writer.add_scalar('Validation/uniqueness_pct', uniqueness_pct, self.current_epoch)
         self.writer.add_scalar('Validation/avg_hamming_distance', avg_hamming, self.current_epoch)
+        if self.H_matrix is not None:
+            self.writer.add_scalar('Validation/valid_codewords_pct', valid_pct, self.current_epoch)
         self.writer.add_scalar('Validation/in_training_pct', in_training_pct, self.current_epoch)
         
         # Print results
         print(f"  Unique samples: {unique_samples}/{len(generated_samples)} ({uniqueness_pct:.1f}%)")
         print(f"  Avg Hamming distance: {avg_hamming:.1f}")
+        if self.H_matrix is not None:
+            print(f"  Valid LDPC codewords: {valid_codewords}/{len(generated_samples)} ({valid_pct:.1f}%)")
         print(f"  In training set: {in_training_pct:.1f}%")
         print()
         

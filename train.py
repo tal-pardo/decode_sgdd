@@ -173,7 +173,9 @@ def train_binary_diffusion(config):
         keep_strategy=config.checkpointing.keep_strategy,
         keep_last_n=config.checkpointing.keep_last_n,
         validation_freq=config.logging.validation_freq,
-        num_samples_to_generate=config.logging.num_samples_to_generate
+        num_samples_to_generate=config.logging.num_samples_to_generate,
+        check_overfitting=config.logging.check_overfitting,
+        overfitting_sample_size=config.logging.overfitting_sample_size
     )
     
     # Train
