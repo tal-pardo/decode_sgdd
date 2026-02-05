@@ -41,15 +41,24 @@ class CustomBinaryDataset(Dataset):
     def __init__(self, data, seq_len=128, vocab_size=2):
         """
         Args:
-            data: Tensor of shape (num_samples, seq_len) or file path
+            data: Tensor of shape (num_samples, seq_len), dict with 'codewords' and 'H_matrix', or file path
             seq_len: Expected sequence length
             vocab_size: Vocabulary size
         """
         if isinstance(data, str):
             # Load from file
-            self.data = torch.load(data, weights_only=True)
+            loaded = torch.load(data, weights_only=False)  # Need weights_only=False to load numpy arrays
+            
+            # Handle dict format (new) vs raw tensor (old)
+            if isinstance(loaded, dict):
+                self.data = loaded['codewords']
+                self.H_matrix = loaded.get('H_matrix', None)  # Numpy array
+            else:
+                self.data = loaded
+                self.H_matrix = None
         else:
             self.data = data
+            self.H_matrix = None
         
         # Validate
         assert self.data.shape[1] == seq_len, f"Expected seq_len={seq_len}, got {self.data.shape[1]}"

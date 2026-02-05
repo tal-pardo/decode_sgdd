@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=rtx4090
-#SBATCH --time=01:00:00
+#SBATCH --time=08:00:00
 #SBATCH --job-name=debug_train 
 #SBATCH --output=debug_train-id-%J.out 
 #SBATCH --mail-user=pardot@post.bgu.ac.il 
@@ -20,7 +20,4 @@ cd /home/pardot/decoder_sgdd
 mkdir -p logs
 
 # Run the training script with debug config (10 epochs, 5000 samples)
-echo "Starting DEBUG training (10 epochs, small dataset)..."
-python train.py --config config_debug.yaml
-
-echo "Debug training completed!"
+python train.py --config configs/config_debug.yaml

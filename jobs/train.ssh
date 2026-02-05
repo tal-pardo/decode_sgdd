@@ -14,7 +14,7 @@ source /storage/modules/packages/anaconda/etc/profile.d/conda.sh
 conda activate de_SGDD
 
 # Navigate to project directory
-cd /home/pardot/sgdd/decode_sgdd
+cd /home/pardot/sgdd/decoder_sgdd
 
 # Run the training script with production config
 python train.py --config config_production.yaml

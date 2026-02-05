@@ -2,8 +2,8 @@
 # Larger dataset and optimized hyperparameters
 
 dataset:
-  path: "ldpc_codewords_r05_large.pt"  # Will generate this file
-  num_samples: null                     # Use all samples
+  path: "data/ldpc_codewords_r05_large.pt"  # Will generate this file
+  num_samples: null                         # Use all samples
   seq_len: 128
   vocab_size: 2
   val_split: 0.15

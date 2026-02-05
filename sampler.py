@@ -67,7 +67,7 @@ class UnconditionalSampler(DiscreteDiffusionSampler):
             Samples of shape (num_samples, seq_len)
         """
         # Start from random/uniform distribution
-        x_t = self.graph.sample_limit((num_samples,) + (self.model.seq_len,)).to(self.device)
+        x_t = self.graph.sample_limit(num_samples, self.model.seq_len).to(self.device)
         
         iterator = tqdm(reversed(self.time_steps)) if verbose else reversed(self.time_steps)
         
@@ -108,7 +108,7 @@ class UnconditionalSampler(DiscreteDiffusionSampler):
         
         # Gumbel-max trick
         gumbel_noise = -torch.log(-torch.log(torch.rand_like(probs_flat) + 1e-10) + 1e-10)
-        samples = (probs.log() + gumbel_noise).argmax(dim=-1)
+        samples = (probs_flat.log() + gumbel_noise).argmax(dim=-1)
         
         return samples.reshape(batch_size, seq_len)
 

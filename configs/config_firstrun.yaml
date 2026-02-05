@@ -1,0 +1,108 @@
+# First Run Configuration - Hyperparameter Optimization
+# Goal: 80% valid, unique samples not in dataset
+# Dataset: 100K LDPC codewords
+# Model: Small Transformer (7.3M params)
+
+# ============================================================================
+# DATASET PARAMETERS
+# ============================================================================
+dataset:
+  path: "data/ldpc_codewords_r05.pt"  # 100K dataset
+  num_samples: null                    # Use all 100K samples
+  seq_len: 128                         # Binary sequence length
+  vocab_size: 2                        # Binary: 0 or 1
+  val_split: 0.1                       # 90K train, 10K val
+  seed: 42
+
+# ============================================================================
+# MODEL ARCHITECTURE (Small Transformer - Debug)
+# ============================================================================
+model:
+  type: "transformer"
+  
+  # Transformer-specific
+  hidden_dim: 256                      # Small hidden dimension
+  n_heads: 8                           # 256 / 8 = 32 dims per head
+  n_blocks: 6                          # 6 transformer blocks
+  mlp_ratio: 4.0                       # MLP expansion: 256 → 1024 → 256
+  dropout: 0.1                         # Modest dropout
+  scale_by_sigma: true                 # SEDD post-processing
+  
+  # MLP-specific (unused for transformer)
+  embedding_dim: 64
+  num_layers: 4
+
+# ============================================================================
+# NOISE SCHEDULE
+# ============================================================================
+# Controls diffusion dynamics - tune this for LDPC learning!
+noise_schedule:
+  type: "cosine"                       # Recommended for constraint learning
+  sigma_min: 0.001                     # Near-clean regime
+  sigma_max: 1.0                       # Full noise regime
+  # 
+  # Alternative schedules to test later:
+  # - Try "linear" if cosine overfits
+  # - Increase sigma_min to 0.01 if learning too slowly at high noise
+  # - Decrease sigma_max to 0.9 if noise too extreme
+
+# ============================================================================
+# TRAINING PARAMETERS - FIRST RUN HYPERPARAMETERS
+# ============================================================================
+training:
+  num_epochs: 70                       # From user specification
+  batch_size: 128                      # From user specification (larger = stable)
+  learning_rate: 1.0e-4                # From user specification (1e-4 is safe)
+  optimizer: "adam"                    # Adam is standard
+  weight_decay: 0.1                    # From user specification (strong L2 reg)
+  
+  # Gradient clipping - prevents gradient explosion
+  clip_grad_norm: 1.0                  # Clip at norm 1.0
+  
+  # Learning rate scheduling
+  lr_scheduler:
+    type: "cosine"                     # Cosine annealing with warmup
+    warmup_epochs: 5                   # Warmup for 5 epochs
+                                       # Calculation:
+                                       #   100K samples / 128 batch = 781 steps/epoch
+                                       #   5 epochs × 781 = 3,905 warmup steps
+                                       #   3,905 / (781 × 70) = 7.1% of total
+                                       # LR: 0 → 1e-4 over first 5 epochs
+    min_lr: 1.0e-5                     # Final LR: 1e-5 after cosine decay
+
+# ============================================================================
+# CHECKPOINTING & LOGGING
+# ============================================================================
+checkpointing:
+  save_dir: "./checkpoints_firstrun"
+  save_freq: 5                         # Save every 5 epochs (lighter saves)
+  save_best: true                      # Always save best validation
+  keep_strategy: "best_and_last"       # Keep only best + latest
+  keep_last_n: 3                       # (ignored for best_and_last)
+
+logging:
+  log_freq: 100                        # Log every 100 batches (~12.8K samples)
+                                       # ~8 times per epoch to avoid massive output
+  print_model_summary: true            # Summary at start
+  log_attention: false                 # Skip for speed
+  validation_freq: 5                   # Validate every 5 epochs
+  num_samples_to_generate: 200         # Generate 200 samples each validation
+  check_overfitting: true              # Check if in training set
+  overfitting_sample_size: 10000       # Check against all 10K val samples
+
+# ============================================================================
+# DEVICE & PRECISION
+# ============================================================================
+device:
+  device: "cuda"                       # GPU training
+  mixed_precision: false               # fp32 (no mixed precision)
+
+# ============================================================================
+# DEBUG FLAGS
+# ============================================================================
+debug:
+  enabled: false                       # Production mode
+  check_nan: true                      # Still check for NaN
+  log_gradients: false                 # Skip for speed
+  visualize_attention: false
+  test_forward_pass: true              # Quick sanity check before training

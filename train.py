@@ -17,7 +17,7 @@ from graph import UniformGraph
 from noise_schedule import get_schedule
 from dataset import BinarySequenceDataset, CustomBinaryDataset
 from trainer import Trainer
-from config_loader import load_config, print_config, save_config
+from configs.config_loader import load_config, print_config, save_config
 
 
 def train_binary_diffusion(config):
@@ -175,7 +175,10 @@ def train_binary_diffusion(config):
         validation_freq=config.logging.validation_freq,
         num_samples_to_generate=config.logging.num_samples_to_generate,
         check_overfitting=config.logging.check_overfitting,
-        overfitting_sample_size=config.logging.overfitting_sample_size
+        overfitting_sample_size=config.logging.overfitting_sample_size,
+        warmup_epochs=config.training.lr_scheduler.warmup_epochs,
+        lr_scheduler_type=config.training.lr_scheduler.type,
+        min_lr=config.training.lr_scheduler.min_lr
     )
     
     # Train
@@ -199,8 +202,8 @@ def main():
         description='Train discrete diffusion model from YAML config'
     )
     
-    parser.add_argument('--config', type=str, default='config_debug.yaml',
-                        help='Path to YAML config file (default: config_debug.yaml)')
+    parser.add_argument('--config', type=str, default='configs/config_debug.yaml',
+                        help='Path to YAML config file (default: configs/config_debug.yaml)')
     parser.add_argument('--override-epochs', type=int, default=None,
                         help='Override num_epochs from config')
     parser.add_argument('--override-lr', type=float, default=None,
@@ -212,12 +215,18 @@ def main():
     
     args = parser.parse_args()
     
+    # Resolve config path relative to workspace root if needed
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        # Assume relative to workspace root
+        config_path = Path.cwd() / config_path
+    
     # Load config from YAML
-    if not Path(args.config).exists():
-        print(f"❌ Config file not found: {args.config}")
+    if not config_path.exists():
+        print(f"❌ Config file not found: {config_path}")
         sys.exit(1)
     
-    config = load_config(args.config)
+    config = load_config(str(config_path))
     
     # Apply command-line overrides
     if args.override_epochs is not None:

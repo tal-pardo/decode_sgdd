@@ -36,7 +36,10 @@ class Trainer:
                  validation_freq=2,
                  num_samples_to_generate=100,
                  check_overfitting=True,
-                 overfitting_sample_size=5000):
+                 overfitting_sample_size=5000,
+                 warmup_epochs=0,
+                 lr_scheduler_type='none',
+                 min_lr=1e-5):
         """
         Args:
             model: Score model to train
@@ -76,6 +79,9 @@ class Trainer:
         self.num_samples_to_generate = num_samples_to_generate
         self.check_overfitting = check_overfitting
         self.overfitting_sample_size = overfitting_sample_size
+        self.warmup_epochs = warmup_epochs
+        self.lr_scheduler_type = lr_scheduler_type
+        self.min_lr = min_lr
         
         # Try to load LDPC parity-check matrix from dataset
         self.H_matrix = self._extract_h_matrix()
@@ -85,6 +91,12 @@ class Trainer:
         
         # Optimizer
         self.optimizer = Adam(model.parameters(), lr=learning_rate)
+        
+        # Learning rate scheduler with warmup
+        total_steps = len(train_loader) * num_epochs
+        warmup_steps = len(train_loader) * warmup_epochs
+        
+        self.scheduler = self._create_scheduler(total_steps, warmup_steps, learning_rate, min_lr, lr_scheduler_type)
         
         # Training state
         self.current_epoch = 0
@@ -140,6 +152,19 @@ class Trainer:
         
         self.writer.close()
         print("Training complete!")
+        
+        # Final validation on best model
+        best_checkpoint_path = self.save_dir / 'checkpoint_best.pt'
+        if best_checkpoint_path.exists():
+            print("\n" + "="*60)
+            print("FINAL VALIDATION ON BEST MODEL")
+            print("="*60)
+            checkpoint = torch.load(best_checkpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.current_epoch = checkpoint['epoch']
+            self._validate_samples()
+            print("="*60 + "\n")
+        
         self._save_training_summary()
     
     def _train_epoch(self):
@@ -176,6 +201,10 @@ class Trainer:
             
             self.optimizer.step()
             
+            # Update learning rate scheduler
+            if self.scheduler is not None:
+                self.scheduler.step()
+            
             # Logging
             total_loss += loss.item()
             num_batches += 1
@@ -183,8 +212,9 @@ class Trainer:
             
             if (batch_idx + 1) % self.log_freq == 0:
                 avg_loss = total_loss / num_batches
+                current_lr = self.optimizer.param_groups[0]['lr']
                 print(f"  Batch {batch_idx+1}/{len(self.train_loader)} | "
-                      f"Loss: {avg_loss:.6f}")
+                      f"Loss: {avg_loss:.6f} | LR: {current_lr:.2e}")
         
         return total_loss / num_batches
     
@@ -246,45 +276,80 @@ class Trainer:
         
         return x_t
     
-    def _extract_h_matrix(self):
+    def _create_scheduler(self, total_steps, warmup_steps, base_lr, min_lr, scheduler_type):
         """
-        Extract LDPC parity-check matrix (H) from dataset if available.
+        Create learning rate scheduler with optional warmup.
+        
+        Args:
+            total_steps: Total training steps
+            warmup_steps: Number of warmup steps
+            base_lr: Initial learning rate
+            min_lr: Minimum learning rate (for cosine annealing)
+            scheduler_type: 'cosine', 'linear', 'exponential', or 'none'
         
         Returns:
-            H matrix as numpy array, or None if not available
+            scheduler object or None if scheduler_type='none'
         """
+        if scheduler_type == 'none':
+            return None
+        
+        # Create base scheduler
+        if scheduler_type == 'cosine':
+            from torch.optim.lr_scheduler import CosineAnnealingLR
+            scheduler = CosineAnnealingLR(self.optimizer, T_max=total_steps, eta_min=min_lr)
+        elif scheduler_type == 'linear':
+            from torch.optim.lr_scheduler import LinearLR
+            scheduler = LinearLR(self.optimizer, start_factor=0.1, total_iters=total_steps)
+        elif scheduler_type == 'exponential':
+            from torch.optim.lr_scheduler import ExponentialLR
+            scheduler = ExponentialLR(self.optimizer, gamma=0.9999)
+        else:
+            return None
+        
+        # Add warmup if needed
+        if warmup_steps > 0:
+            from torch.optim.lr_scheduler import ChainedScheduler, LinearLR
+            warmup_scheduler = LinearLR(self.optimizer, start_factor=0.01, total_iters=warmup_steps)
+            scheduler = ChainedScheduler([warmup_scheduler, scheduler])
+        
+        return scheduler
+    
+    def _extract_h_matrix(self):
+        """
+        Extract LDPC parity-check matrix (H) from dataset.
+        
+        Returns:
+            H matrix as numpy array
+            
+        Raises:
+            RuntimeError if H_matrix not found in dataset
+        """
+        import numpy as np
+        
         try:
             dataset = self.train_loader.dataset
+            
+            # Handle torch.utils.data.Subset wrapping
+            while hasattr(dataset, 'dataset'):
+                dataset = dataset.dataset
+            
             # Try to find stored H matrix in dataset
-            if hasattr(dataset, 'H_matrix'):
-                return dataset.H_matrix
-            elif hasattr(dataset, 'generator') and hasattr(dataset.generator, 'H'):
-                import numpy as np
-                return np.array(dataset.generator.H, dtype=np.int32)
+            if hasattr(dataset, 'H_matrix') and dataset.H_matrix is not None:
+                return np.array(dataset.H_matrix, dtype=np.int32)
             else:
-                # Try to reconstruct from ldpc_dataset_clean.py
-                import pyldpc
-                import numpy as np
-                code_rate = 0.5
-                n = 128
-                k = int(n * code_rate)
-                m = n - k
-                column_weight = 2
-                row_weight = max(2, (n * column_weight) // m)
-                
-                result = pyldpc.make_ldpc(n, column_weight, row_weight, seed=42)
-                if isinstance(result, tuple):
-                    H = result[0]
-                else:
-                    H = result
-                
-                H = np.array(H, dtype=np.int32)
-                if H.shape[0] > m:
-                    H = H[:m, :]
-                
-                return H
-        except:
-            return None
+                # No fallback - must have saved H_matrix in dataset
+                raise RuntimeError(
+                    "H_matrix not found in dataset! "
+                    "Please ensure the dataset was generated with ldpc_generate_dataset.py "
+                    "which saves H_matrix alongside the codewords."
+                )
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to extract H_matrix from dataset: {e}. "
+                f"Dataset must be loaded from a .pt file with H_matrix metadata."
+            )
     
     def _is_valid_codeword(self, x):
         """
@@ -297,9 +362,6 @@ class Trainer:
         Returns:
             True if valid codeword, False otherwise
         """
-        if self.H_matrix is None:
-            return None
-        
         # Convert to numpy if needed
         if isinstance(x, torch.Tensor):
             x = x.cpu().numpy()
@@ -422,17 +484,15 @@ class Trainer:
         
         avg_hamming = np.mean(hamming_distances) if hamming_distances else 0
         
-        # 3. LDPC Codeword Validity Check
+        # 3. LDPC Codeword Validity Check (H_matrix is guaranteed to exist)
         valid_codewords = 0
-        if self.H_matrix is not None:
-            for sample in generated_samples:
-                if self._is_valid_codeword(sample):
-                    valid_codewords += 1
-            valid_pct = (valid_codewords / len(generated_samples)) * 100
-        else:
-            valid_pct = 0  # Unable to check if H matrix not available
+        for sample in generated_samples:
+            if self._is_valid_codeword(sample):
+                valid_codewords += 1
+        valid_pct = (valid_codewords / len(generated_samples)) * 100
         
         # 4. Check if samples are in training set (overfitting check)
+        in_training_pct = 0
         if self.train_loader.dataset is not None and self.check_overfitting:
             try:
                 # Sample subset of training data for efficiency

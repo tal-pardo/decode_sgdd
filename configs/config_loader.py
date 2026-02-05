@@ -236,5 +236,5 @@ def print_config(config: Config) -> None:
 
 if __name__ == "__main__":
     # Test loading config
-    config = load_config('config_debug.yaml')
+    config = load_config('config_debug.yaml')  # Run from configs/ directory
     print_config(config)
