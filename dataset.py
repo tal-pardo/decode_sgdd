@@ -47,7 +47,7 @@ class CustomBinaryDataset(Dataset):
         """
         if isinstance(data, str):
             # Load from file
-            self.data = torch.load(data)
+            self.data = torch.load(data, weights_only=True)
         else:
             self.data = data
         
