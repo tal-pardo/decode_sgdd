@@ -332,6 +332,7 @@ class Trainer:
                     if dsigma != 0:
                         x_t = x_t + dsigma * score.argmax(dim=-1)
                         x_t = torch.clamp(x_t, 0, self.graph.dim - 1)
+                        x_t = x_t.long()  # Ensure it stays as long tensor for embedding
                 
                 generated_samples.append(x_t.cpu())
         
