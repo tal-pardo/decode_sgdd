@@ -38,6 +38,7 @@ de_SGDD/
 Thumbs.db
 
 # Training outputs and checkpoints
+trained_models/
 checkpoints*/
 *.out
 outputs/

@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --partition=rtx4090
+#SBATCH --time=01:00:00
+#SBATCH --job-name=generate_data 
+#SBATCH --output=generate_data-id-%J.out 
+#SBATCH --mail-user=pardot@post.bgu.ac.il 
+#SBATCH --mail-type=BEGIN,END,FAIL 
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+
+# Activate conda environment
+source /storage/modules/packages/anaconda/etc/profile.d/conda.sh
+conda activate de_SGDD
+
+# Navigate to project directory
+cd /home/pardot/decoder_sgdd
+
+# Run the generating data script with production config (50k samples)
+python ldpc_generate_dataset.py --num-samples 100000 --save-path ldpc_codewords_r05_100k.pt
