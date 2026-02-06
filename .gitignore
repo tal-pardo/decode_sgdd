@@ -40,6 +40,7 @@ Thumbs.db
 # Training outputs and checkpoints
 trained_models/
 checkpoints*/
+*.out
 outputs/
 logs/
 *.pt
