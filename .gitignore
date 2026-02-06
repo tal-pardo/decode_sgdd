@@ -49,11 +49,9 @@ checkpoint_*.pt
 model_final.pt
 training_summary.json
 
-# Datasets
-data/
-datasets/
-*.data
-ldpc_codewords*.pt
+# Data
+debug.py
+*.pt
 
 # Temporary/log files
 extracting txt files/
