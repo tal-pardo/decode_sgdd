@@ -26,7 +26,7 @@ def compare_models():
     parser = argparse.ArgumentParser(description='Compare SEDD Transformer vs MLP on LDPC data')
     
     # Shared arguments
-    parser.add_argument('--dataset-path', type=str, default='ldpc_codewords_r05.pt',
+    parser.add_argument('--dataset-path', type=str, default='ldpc_codewords_r05_100k.pt',
                         help='Path to LDPC dataset')
     parser.add_argument('--num-epochs', type=int, default=20,
                         help='Number of training epochs')

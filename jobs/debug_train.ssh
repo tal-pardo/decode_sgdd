@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --partition=rtx4090
 #SBATCH --time=08:00:00
-#SBATCH --job-name=debug_train 
-#SBATCH --output=debug_train-id-%J.out 
+#SBATCH --job-name=firstrun_train 
+#SBATCH --output=firstrun_train-id-%J.out 
 #SBATCH --mail-user=pardot@post.bgu.ac.il 
 #SBATCH --mail-type=BEGIN,END,FAIL 
 #SBATCH --gpus=1
@@ -16,8 +16,5 @@ conda activate de_SGDD
 # Navigate to project directory
 cd /home/pardot/decoder_sgdd
 
-# Create logs directory
-mkdir -p logs
-
-# Run the training script with debug config (10 epochs, 5000 samples)
-python train.py --config configs/config_debug.yaml
+# Run the training script with first run config (20 epochs, 100K samples)
+python -u train.py --config configs/config_firstrun.yaml

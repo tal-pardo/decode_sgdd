@@ -17,4 +17,4 @@ conda activate de_SGDD
 cd /home/pardot/sgdd/decoder_sgdd
 
 # Run the training script with production config
-python train.py --config config_production.yaml
+python -u train.py --config config_production.yaml

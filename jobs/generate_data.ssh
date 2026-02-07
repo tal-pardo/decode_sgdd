@@ -17,4 +17,4 @@ conda activate de_SGDD
 cd /home/pardot/decoder_sgdd
 
 # Run the generating data script with production config (50k samples)
-python ldpc_generate_dataset.py --num-samples 100000 --save-path ldpc_codewords_r05_100k.pt
+python -u data/ldpc_generate_dataset.py --num-samples 100000 --save-path ldpc_codewords_r05_100k.pt

@@ -5,7 +5,7 @@
 # DATASET PARAMETERS
 # ============================================================================
 dataset:
-  path: "data/ldpc_codewords_r05.pt"  # Path to LDPC dataset
+  path: "data/ldpc_codewords_r05_100k.pt"  # Path to LDPC dataset
   num_samples: null                    # If null, use all samples from dataset file
   seq_len: 128                    # Sequence length (must match dataset)
   vocab_size: 2                   # Binary vocabulary
