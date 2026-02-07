@@ -57,56 +57,70 @@ class UnconditionalSampler(DiscreteDiffusionSampler):
     @torch.no_grad()
     def sample(self, num_samples=1, verbose=True):
         """
-        Generate unconditional samples.
+        Generate unconditional samples using reverse diffusion.
         
         Args:
             num_samples: Number of samples to generate
-            verbose: Whether to show progress bar
+            verbose: Show progress bar
         
         Returns:
             Samples of shape (num_samples, seq_len)
         """
-        # Start from random/uniform distribution
-        x_t = self.graph.sample_limit(num_samples, self.model.seq_len).to(self.device)
+        # Initialize from prior
+        x = self.graph.sample_limit(num_samples, self.model.seq_len).to(self.device)
         
-        iterator = tqdm(reversed(self.time_steps)) if verbose else reversed(self.time_steps)
+        # Create time schedule from 1 to eps
+        eps = 1e-5
+        timesteps = torch.linspace(1, eps, self.num_steps + 1, device=self.device)
+        dt = (1 - eps) / self.num_steps
         
-        for t_idx, t in enumerate(iterator):
-            # Get current and previous sigma
-            sigma_t, _ = self.noise_schedule(torch.tensor([t], device=self.device))
-            sigma_t = sigma_t.squeeze()
-            
-            if t_idx < len(self.time_steps) - 1:
-                t_prev = self.time_steps[t_idx + 1]
-                sigma_prev, _ = self.noise_schedule(torch.tensor([t_prev], device=self.device))
-                sigma_prev = sigma_prev.squeeze()
-            else:
-                sigma_prev = torch.tensor(0.0, device=self.device)
-            
-            # Get score prediction
-            score = self.model(x_t, sigma_t.expand(num_samples))
-            
-            # Denoising step using score
-            # p(x_{t-1} | x_t) proportional to score * transition matrix
-            stag_score = self.graph.staggered_score(score, (sigma_t - sigma_prev).unsqueeze(-1))
-            
-            # Get transition probabilities
-            transition_probs = stag_score * self.graph.transp_transition(x_t, sigma_t.expand(num_samples))
-            
-            # Normalize and sample
-            transition_probs = transition_probs / (transition_probs.sum(dim=-1, keepdim=True) + 1e-10)
-            x_t = self._sample_categorical(transition_probs)
+        iterator = tqdm(range(self.num_steps)) if verbose else range(self.num_steps)
         
-        return x_t
+        for i in iterator:
+            t = timesteps[i]
+            
+            # Get current and next sigma
+            # Convert to schedule parameter: schedule expects t in [0,1] where 
+            # t=0 is high noise, t=1 is low noise. Our reverse diffusion goes from
+            # t=1 (high noise) to t≈0 (low noise), so we invert: t_sched = 1 - t
+            t_sched = 1.0 - t
+            t_sched_tensor = t_sched * torch.ones(num_samples, device=self.device)
+            next_t_sched = 1.0 - (t - dt)
+            next_t_sched_tensor = next_t_sched * torch.ones(num_samples, device=self.device)
+            
+            curr_sigma, _ = self.noise_schedule(t_sched_tensor)
+            next_sigma, _ = self.noise_schedule(next_t_sched_tensor)
+            dsigma = curr_sigma - next_sigma
+            
+            # Score prediction
+            score = self.model(x, curr_sigma)
+            
+            # Compute transition probabilities
+            stag_score = self.graph.staggered_score(score, dsigma.unsqueeze(-1))
+            probs = stag_score * self.graph.transp_transition(x, dsigma)
+            
+            # Sample
+            x = self._sample_categorical(probs)
+        
+        # Final denoising step
+        t = timesteps[-1]
+        t_sched = 1.0 - t
+        t_sched_tensor = t_sched * torch.ones(num_samples, device=self.device)
+        curr_sigma, _ = self.noise_schedule(t_sched_tensor)
+        
+        score_logits = self.model(x, curr_sigma)
+        score = score_logits.exp()  # Model outputs log-scores, must exponentiate
+        stag_score = self.graph.staggered_score(score, curr_sigma.unsqueeze(-1))
+        probs = stag_score * self.graph.transp_transition(x, curr_sigma)
+        x = self._sample_categorical(probs)
+        
+        return x
     
     def _sample_categorical(self, probs):
-        """Sample from categorical distribution."""
+        """Sample from categorical distribution using Gumbel-max trick."""
         batch_size, seq_len, vocab_size = probs.shape
-        
-        # Flatten for sampling
         probs_flat = probs.reshape(-1, vocab_size)
         
-        # Gumbel-max trick
         gumbel_noise = -torch.log(-torch.log(torch.rand_like(probs_flat) + 1e-10) + 1e-10)
         samples = (probs_flat.log() + gumbel_noise).argmax(dim=-1)
         
@@ -166,41 +180,65 @@ class SplitGibbsSampler(DiscreteDiffusionSampler):
             raise ValueError("forward_op provided but observation is None")
         
         # Initialize from prior
-        x_t = self.graph.sample_limit((num_samples,) + (self.model.seq_len,)).to(self.device)
+        x = self.graph.sample_limit(num_samples, self.model.seq_len).to(self.device)
+        
+        # Create time schedule from 1 to eps
+        eps = 1e-5
+        timesteps = torch.linspace(1, eps, self.num_steps + 1, device=self.device)
+        dt = (1 - eps) / self.num_steps
         
         iterator = tqdm(range(self.num_steps)) if verbose else range(self.num_steps)
         
-        for step_idx in iterator:
-            t = self.time_steps[step_idx]
-            sigma_t, _ = self.noise_schedule(torch.tensor([t], device=self.device))
-            sigma_t = sigma_t.squeeze()
+        for i in iterator:
+            t = timesteps[i]
             
-            # 1. Score-based reverse step
-            score = self.model(x_t, sigma_t.expand(num_samples))
+            # Get current and next sigma
+            # Convert to schedule parameter: t_sched = 1 - t
+            t_sched = 1.0 - t
+            t_sched_tensor = t_sched * torch.ones(num_samples, device=self.device)
+            next_t_sched = 1.0 - (t - dt)
+            next_t_sched_tensor = next_t_sched * torch.ones(num_samples, device=self.device)
             
-            # Staggered score
-            if step_idx < len(self.time_steps) - 1:
-                t_prev = self.time_steps[step_idx + 1]
-                sigma_prev, _ = self.noise_schedule(torch.tensor([t_prev], device=self.device))
-                sigma_prev = sigma_prev.squeeze()
-                dsigma = sigma_t - sigma_prev
-            else:
-                dsigma = sigma_t
+            curr_sigma, _ = self.noise_schedule(t_sched_tensor)
+            next_sigma, _ = self.noise_schedule(next_t_sched_tensor)
+            dsigma = curr_sigma - next_sigma
             
+            # Score prediction
+            score_logits = self.model(x, curr_sigma)
+            score = score_logits.exp()  # Model outputs log-scores, must exponentiate
+            
+            # Compute transition probabilities
             stag_score = self.graph.staggered_score(score, dsigma.unsqueeze(-1))
+            probs = stag_score * self.graph.transp_transition(x, dsigma)
             
-            # Transition
-            transition_probs = stag_score * self.graph.transp_transition(x_t, sigma_t.expand(num_samples))
-            transition_probs = transition_probs / (transition_probs.sum(dim=-1, keepdim=True) + 1e-10)
-            x_t = self._sample_categorical(transition_probs)
+            # Sample
+            x = self._sample_categorical(probs)
             
-            # 2. Metropolis-Hastings conditioning step
+            # Metropolis-Hastings conditioning step
             if observation is not None and self.forward_op is not None:
-                x_t = self._metropolis_hastings(
-                    x_t, observation, sigma_t.expand(num_samples), num_samples
+                x = self._metropolis_hastings(
+                    x, observation, curr_sigma, num_samples
                 )
         
-        return x_t
+        # Final denoising step
+        t = timesteps[-1]
+        t_sched = 1.0 - t
+        t_sched_tensor = t_sched * torch.ones(num_samples, device=self.device)
+        curr_sigma, _ = self.noise_schedule(t_sched_tensor)
+        
+        score_logits = self.model(x, curr_sigma)
+        score = score_logits.exp()  # Model outputs log-scores, must exponentiate
+        stag_score = self.graph.staggered_score(score, curr_sigma.unsqueeze(-1))
+        probs = stag_score * self.graph.transp_transition(x, curr_sigma)
+        x = self._sample_categorical(probs)
+        
+        # Final MH step
+        if observation is not None and self.forward_op is not None:
+            x = self._metropolis_hastings(
+                x, observation, curr_sigma, num_samples
+            )
+        
+        return x
     
     def _metropolis_hastings(self, x_current, observation, sigma, num_samples):
         """
@@ -284,11 +322,11 @@ class SplitGibbsSampler(DiscreteDiffusionSampler):
         return log_ratio
     
     def _sample_categorical(self, probs):
-        """Sample from categorical using Gumbel-max."""
+        """Sample from categorical using Gumbel-max trick."""
         batch_size, seq_len, vocab_size = probs.shape
         probs_flat = probs.reshape(-1, vocab_size)
         
         gumbel_noise = -torch.log(-torch.log(torch.rand_like(probs_flat) + 1e-10) + 1e-10)
-        samples = (probs.log() + gumbel_noise).argmax(dim=-1)
+        samples = (probs_flat.log() + gumbel_noise).argmax(dim=-1)
         
         return samples.reshape(batch_size, seq_len)

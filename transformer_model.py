@@ -395,19 +395,17 @@ class SEDDTransformer(nn.Module):
             # log(e^sigma - 1) + log(vocab_size - 1)
             logits = logits - esigm1_log - math.log(self.vocab_size - 1)
         
-        # Step 1: Zero out current token logits - SECOND
-        # The model should predict alternative tokens, not the current ones
-        # logits shape: [B, S, vocab_size]
-        # x_orig shape: [B, S] with token indices
-        
-        # Flatten and use advanced indexing
-        b, s, v = logits.shape
-        flat_logits = logits.reshape(b * s, v)
-        flat_tokens = x_orig.reshape(b * s).long()
-        
-        # Zero out logits at current token positions
-        flat_logits[torch.arange(b * s, device=logits.device), flat_tokens] = 0.0
-        logits = flat_logits.reshape(b, s, v)
+        # Step 1: Zero out current token logits - INFERENCE ONLY
+        # This should only happen during sampling, NOT during training
+        # During training, need full logits to compute loss correctly
+        if not self.training:
+            b, s, v = logits.shape
+            flat_logits = logits.reshape(b * s, v)
+            flat_tokens = x_orig.reshape(b * s).long()
+            
+            # Zero out logits at current token positions
+            flat_logits[torch.arange(b * s, device=logits.device), flat_tokens] = 0.0
+            logits = flat_logits.reshape(b, s, v)
         
         return logits
 

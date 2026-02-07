@@ -2,7 +2,7 @@
 #SBATCH --partition=rtx4090
 #SBATCH --time=08:00:00
 #SBATCH --job-name=firstrun_train 
-#SBATCH --output=firstrun_train-id-%J.out 
+#SBATCH --output=jobs/firstrun_train-id-%J.out 
 #SBATCH --mail-user=pardot@post.bgu.ac.il 
 #SBATCH --mail-type=BEGIN,END,FAIL 
 #SBATCH --gpus=1
